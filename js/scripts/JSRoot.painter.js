@@ -81,24 +81,30 @@ JSROOT.define(['d3'], (d3) => {
       root_line_styles: ["", "", "3,3", "1,2",
          "3,4,1,4", "5,3,1,3", "5,3,1,3,1,3,1,3", "5,5",
          "5,3,1,3,1,3", "20,5", "20,10,1,10", "1,3"],
-      root_markers: [0, 100, 8, 7, 0,  //  0..4
-         9, 100, 100, 100, 100,  //  5..9
-         100, 100, 100, 100, 100,  // 10..14
-         100, 100, 100, 100, 100,  // 15..19
-         100, 103, 105, 104, 0,  // 20..24
-         3, 4, 2, 1, 106,  // 25..29
-         6, 7, 5, 102, 101], // 30..34
+      root_markers: [
+         0, 1, 2, 3, 4,           //  0..4
+         5, 106, 107, 104, 1,     //  5..9
+         1, 1, 1, 1, 1,           // 10..14
+         1, 1, 1, 1, 1,           // 15..19
+         104, 125, 126, 132, 4,   // 20..24
+         25, 26, 27, 28, 130,     // 25..29
+         30, 3, 32, 127, 128,     // 30..34
+         35, 36, 37, 38, 137,     // 35..39
+         40, 140, 42, 142, 44,    // 40..44
+         144, 46, 146, 148, 149], // 45..49
       root_fonts: ['Arial', 'iTimes New Roman',
          'bTimes New Roman', 'biTimes New Roman', 'Arial',
          'oArial', 'bArial', 'boArial', 'Courier New',
          'oCourier New', 'bCourier New', 'boCourier New',
-         'Symbol', 'Times New Roman', 'Wingdings', 'iSymbol', 'Verdana'],
+         'Symbol', 'Times New Roman', 'Wingdings', 'iSymbol',
+         'Verdana', 'iVerdana', 'bVerdana', 'biVerdana'],
       // taken from https://www.math.utah.edu/~beebe/fonts/afm-widths.html
       root_fonts_aver_width: [0.537, 0.510,
          0.535, 0.520, 0.537,
          0.54, 0.556, 0.56, 0.6,
          0.6, 0.6, 0.6,
-         0.587, 0.514, 0.896, 0.587, 0.55]
+         0.587, 0.514, 0.896, 0.587,
+         0.55, 0.55, 0.55, 0.55 ]
    };
 
    jsrp.createMenu = function(evnt, handler, menuname) {
@@ -393,7 +399,8 @@ JSROOT.define(['d3'], (d3) => {
      * @param {object} args.attr - instance of TAttrMarker (or derived class) or
      * @param {string} args.color - color in HTML form like grb(1,4,5) or 'green'
      * @param {number} args.style - marker style
-     * @param {number} args.size - marker size */
+     * @param {number} args.size - marker size
+     * @param {number} [args.refsize] - when specified and marker size < 1, marker size will be calculated relative to that size */
    TAttMarkerHandler.prototype.setArgs = function(args) {
       if ((typeof args == 'object') && (typeof args.fMarkerStyle == 'number')) args = { attr: args };
 
@@ -404,7 +411,12 @@ JSROOT.define(['d3'], (d3) => {
          if (!args.size) args.size = args.attr.fMarkerSize;
       }
 
-      this.change(args.color, args.style, args.size);
+      this.color = args.color;
+      this.style = args.style;
+      this.size = args.size;
+      this.refsize = args.refsize;
+
+      this._configure();
    }
 
    /** @summary Reset position, used for optimization of drawing of multiple markers
@@ -422,7 +434,7 @@ JSROOT.define(['d3'], (d3) => {
 
       // use optimized handling with relative position
       let xx = Math.round(x), yy = Math.round(y), m1 = "M" + xx + "," + yy + "h1",
-         m2 = (this.lastx === null) ? m1 : ("m" + (xx - this.lastx) + "," + (yy - this.lasty) + "h1");
+          m2 = (this.lastx === null) ? m1 : ("m" + (xx - this.lastx) + "," + (yy - this.lasty) + "h1");
       this.lastx = xx + 1; this.lasty = yy;
       return (m2.length < m1.length) ? m2 : m1;
    }
@@ -442,7 +454,14 @@ JSROOT.define(['d3'], (d3) => {
 
       if (color !== undefined) this.color = color;
       if ((style !== undefined) && (style >= 0)) this.style = style;
-      if (size !== undefined) this.size = size; else size = this.size;
+      if (size !== undefined) this.size = size;
+
+      this._configure();
+   }
+
+   /** @summary Prepare object to create marker
+     * @private */
+    TAttMarkerHandler.prototype._configure = function() {
 
       this.x0 = this.y0 = 0;
 
@@ -458,75 +477,125 @@ JSROOT.define(['d3'], (d3) => {
       this.optimized = false;
 
       let marker_kind = jsrp.root_markers[this.style];
-      if (marker_kind === undefined) marker_kind = 100;
+      if (marker_kind === undefined) marker_kind = 104;
       let shape = marker_kind % 100;
 
       this.fill = (marker_kind >= 100);
 
-      switch (this.style) {
-         case 1: this.size = 1; this.scale = 1; break;
-         case 6: this.size = 2; this.scale = 1; break;
-         case 7: this.size = 3; this.scale = 1; break;
-         default: this.size = size; this.scale = 8;
-      }
+      this.scale = this.refsize || 8; // v7 defines refsize as 1 or pad height
 
-      size = this.getFullSize();
+      let size = this.getFullSize();
 
       this.ndig = (size > 7) ? 0 : ((size > 2) ? 1 : 2);
-      if (shape == 6) this.ndig++;
-      let half = (size / 2).toFixed(this.ndig), full = size.toFixed(this.ndig);
+      if (shape == 30) this.ndig++; // increase precision for star
+      let s1 = size.toFixed(this.ndig),
+          s2 = (size/2).toFixed(this.ndig),
+          s3 = (size/3).toFixed(this.ndig),
+          s4 = (size/4).toFixed(this.ndig),
+          s8 = (size/8).toFixed(this.ndig),
+          s38 = (size*3/8).toFixed(this.ndig);
 
       switch (shape) {
-         case 0: // circle
-            this.x0 = -parseFloat(half);
-            full = (parseFloat(half) * 2).toFixed(this.ndig);
-            this.marker = "a" + half + "," + half + ",0,1,0," + full + ",0a" + half + "," + half + ",0,1,0,-" + full + ",0z";
+         case 1: // dot
+            this.marker = "h1";
             break;
-         case 1: // cross
-            let d = (size / 3).toFixed(this.ndig);
+         case 2: // plus
+            this.y0 = -size / 2;
+            this.marker = `v${s1}m-${s2},-${s2}h${s1}`;
+            break;
+         case 3: // asterisk
+            this.x0 = this.y0 = -size / 2;
+            this.marker = "l" + s1 + "," + s1 +
+               "m0,-" + s1 + "l-" + s1 + "," + s1 +
+               "m0,-" + s2 + "h" + s1 + "m-" + s2 + ",-" + s2 + "v" + s1;
+            break;
+         case 4: // circle
+            this.x0 = -parseFloat(s2);
+            s1 = (parseFloat(s2) * 2).toFixed(this.ndig);
+            this.marker = `a${s2},${s2},0,1,0,${s1},0a${s2},${s2},0,1,0,-${s1},0z`;
+            break;
+         case 5: // mult
+            this.x0 = this.y0 = -size / 2;
+            this.marker = `l${s1},${s1}m0,-${s1}l-${s1},${s1}`;
+            break;
+         case 6: // small dot
+            this.x0 = -1;
+            this.marker = "a1,1,0,1,0,2,0a1,1,0,1,0,-2,0z";
+            break;
+         case 7: // medium dot
+            this.x0 = -1.5;
+            this.marker = "a1.5,1.5,0,1,0,3,0a1.5,1.5,0,1,0,-3,0z";
+            break;
+         case 25: // square
+            this.x0 = this.y0 = -size / 2;
+            this.marker = `v${s1}h${s1}v-${s1}z`;
+            break;
+         case 26: // triangle-up
+            this.y0 = -size / 2;
+            this.marker = `l-${s2},${s1}h${s1}z`;
+            break;
+         case 27: // diamand
+            this.y0 = -size / 2;
+            this.marker = `l${s3},${s2}l-${s3},${s2}l-${s3},-${s2}z`;
+            break;
+         case 28: // cross
             this.x0 = this.y0 = size / 6;
-            this.marker = "h" + d + "v-" + d + "h-" + d + "v-" + d + "h-" + d + "v" + d + "h-" + d + "v" + d + "h" + d + "v" + d + "h" + d + "z";
+            this.marker = `h${s3}v-${s3}h-${s3}v-${s3}h-${s3}v${s3}h-${s3}v${s3}h${s3}v${s3}h${s3}z`;
             break;
-         case 2: // diamond
-            this.x0 = -size / 2;
-            this.marker = "l" + half + ",-" + half + "l" + half + "," + half + "l-" + half + "," + half + "z";
+         case 30: // star
+            this.y0 = -size / 2;
+            this.marker = "l" + (size / 3).toFixed(this.ndig) + "," + s1 +
+               "l-" + (5/6*size).toFixed(this.ndig) + ",-" + (5/8*size).toFixed(this.ndig) +
+               "h" + s1 +
+               "l-" + (5/6*size).toFixed(this.ndig) + "," + (5/8*size).toFixed(this.ndig) + "z";
             break;
-         case 3: // square
-            this.x0 = this.y0 = -size / 2;
-            this.marker = "v" + full + "h" + full + "v-" + full + "z";
-            break;
-         case 4: // triangle-up
+         case 32: // triangle-down
             this.y0 = size / 2;
-            this.marker = "l-" + half + ",-" + full + "h" + full + "z";
+            this.marker = `l-${s2},-${s1}h${s1}z`;
             break;
-         case 5: // triangle-down
-            this.y0 = -size / 2;
-            this.marker = "l-" + half + "," + full + "h" + full + "z";
+         case 35:
+            this.x0 = -size / 2;
+            this.marker = `l${s2},${s2}l${s2},-${s2}l-${s2},-${s2}zh${s1}m-${s2},-${s2}v${s1}`;
             break;
-         case 6: // star
-            this.y0 = -size / 2;
-            this.marker = "l" + (size / 3).toFixed(this.ndig) + "," + full +
-               "l-" + (5 / 6 * size).toFixed(this.ndig) + ",-" + (5 / 8 * size).toFixed(this.ndig) +
-               "h" + full +
-               "l-" + (5 / 6 * size).toFixed(this.ndig) + "," + (5 / 8 * size).toFixed(this.ndig) + "z";
-            break;
-         case 7: // asterisk
+         case 36:
             this.x0 = this.y0 = -size / 2;
-            this.marker = "l" + full + "," + full +
-               "m0,-" + full + "l-" + full + "," + full +
-               "m0,-" + half + "h" + full + "m-" + half + ",-" + half + "v" + full;
+            this.marker = `h${s1}v${s1}h-${s1}zl${s1},${s1}m0,-${s1}l-${s1},${s1}`;
             break;
-         case 8: // plus
-            this.y0 = -size / 2;
-            this.marker = "v" + full + "m-" + half + ",-" + half + "h" + full;
+         case 37:
+            this.x0 = -size/2;
+            this.marker = `h${s1}l-${s4},-${s2}l-${s2},${s1}h${s2}l-${s2},-${s1}z`;
             break;
-         case 9: // mult
-            this.x0 = this.y0 = -size / 2;
-            this.marker = "l" + full + "," + full + "m0,-" + full + "l-" + full + "," + full;
+         case 38:
+            this.x0 = -size/4; this.y0 = -size/2;
+            this.marker = `h${s2}l${s4},${s4}v${s2}l-${s4},${s4}h-${s2}l-${s4},-${s4}v-${s2}zm${s4},0v${s1}m-${s2},-${s2}h${s1}`;
+            break;
+         case 40:
+            this.x0 = -size/4; this.y0 = -size/2;
+            this.marker = `l${s2},${s1}l${s4},-${s4}l-${s1},-${s2}zm${s2},0l-${s2},${s1}l-${s4},-${s4}l${s1},-${s2}z`;
+            break;
+         case 42:
+            this.y0 = -size/2;
+            this.marker = `l${s8},${s38}l${s38},${s8}l-${s38},${s8}l-${s8},${s38}l-${s8},-${s38}l-${s38},-${s8}l${s38},-${s8}z`;
+            break;
+         case 44:
+            this.x0 = -size/4; this.y0 = -size/2;
+            this.marker = `h${s2}l-${s8},${s38}l${s38},-${s8}v${s2}l-${s38},-${s8}l${s8},${s38}h-${s2}l${s8},-${s38}l-${s38},${s8}v-${s2}l${s38},${s8}z`;
+            break;
+         case 46:
+            this.x0 = -size/4; this.y0 = -size/2;
+            this.marker = `l${s4},${s4}l${s4},-${s4}l${s4},${s4}l-${s4},${s4}l${s4},${s4}l-${s4},${s4}l-${s4},-${s4}l-${s4},${s4}l-${s4},-${s4}l${s4},-${s4}l-${s4},-${s4}z`;
+            break;
+         case 48:
+            this.x0 = -size/4; this.y0 = -size/2;
+            this.marker = `l${s4},${s4}l-${s4},${s4}l-${s4},-${s4}zm${s2},0l${s4},${s4}l-${s4},${s4}l-${s4},-${s4}zm0,${s2}l${s4},${s4}l-${s4},${s4}l-${s4},-${s4}zm-${s2},0l${s4},${s4}l-${s4},${s4}l-${s4},-${s4}z`;
+            break;
+         case 49:
+            this.x0 = -size/6; this.y0 = -size/2;
+            this.marker = `h${s3}v${s3}h-${s3}zm${s3},${s3}h${s3}v${s3}h-${s3}zm-${s3},${s3}h${s3}v${s3}h-${s3}zm-${s3},-${s3}h${s3}v${s3}h-${s3}z`;
             break;
          default: // diamand
-            this.x0 = -size / 2;
-            this.marker = "l" + half + ",-" + half + "l" + half + "," + half + "l-" + half + "," + half + "z";
+            this.y0 = -size / 2;
+            this.marker = `l${s3},${s2}l-${s3},${s2}l-${s3},-${s2}z`;
             break;
       }
 
@@ -606,6 +675,7 @@ JSROOT.define(['d3'], (d3) => {
       this.color = (args.width === 0) ? 'none' : args.color;
       this.width = args.width;
       this.style = args.style;
+      this.pattern = args.pattern || jsrp.root_line_styles[this.style] || null;
 
       if (args.can_excl) {
          this.excl_side = this.excl_width = 0;
@@ -636,25 +706,51 @@ JSROOT.define(['d3'], (d3) => {
    /** @summary returns true if line attribute is empty and will not be applied. */
    TAttLineHandler.prototype.empty = function() { return this.color == 'none'; }
 
+   /** @summary set border parameters, used for rect drawing */
+   TAttLineHandler.prototype.setBorder = function(rx, ry) {
+      this.rx = rx;
+      this.ry = ry;
+      this.func = this.applyBorder.bind(this);
+   }
+
    /** @summary Applies line attribute to selection.
      * @param {object} selection - d3.js selection */
    TAttLineHandler.prototype.apply = function(selection) {
       this.used = true;
       if (this.empty())
          selection.style('stroke', null)
-            .style('stroke-width', null)
-            .style('stroke-dasharray', null);
+                  .style('stroke-width', null)
+                  .style('stroke-dasharray', null);
       else
          selection.style('stroke', this.color)
-            .style('stroke-width', this.width)
-            .style('stroke-dasharray', jsrp.root_line_styles[this.style] || null);
+                  .style('stroke-width', this.width)
+                  .style('stroke-dasharray', this.pattern);
+   }
+
+   /** @summary Applies line and border attribute to selection.
+     * @param {object} selection - d3.js selection */
+   TAttLineHandler.prototype.applyBorder = function(selection) {
+      this.used = true;
+      if (this.empty())
+         selection.style('stroke', null)
+                  .style('stroke-width', null)
+                  .style('stroke-dasharray', null)
+                  .attr("rx", null).attr("ry", null);
+      else
+         selection.style('stroke', this.color)
+                  .style('stroke-width', this.width)
+                  .style('stroke-dasharray', this.pattern)
+                  .attr("rx", this.rx || null).attr("ry", this.ry || null);
    }
 
    /** @summary Change line attributes */
    TAttLineHandler.prototype.change = function(color, width, style) {
       if (color !== undefined) this.color = color;
       if (width !== undefined) this.width = width;
-      if (style !== undefined) this.style = style;
+      if (style !== undefined) {
+         this.style = style;
+         this.pattern = jsrp.root_line_styles[this.style] || null;
+      }
       this.changed = true;
    }
 
@@ -701,7 +797,10 @@ JSROOT.define(['d3'], (d3) => {
          if ((args.pattern === undefined) && (args.attr.fFillStyle !== undefined)) args.pattern = args.attr.fFillStyle;
          if ((args.color === undefined) && (args.attr.fFillColor !== undefined)) args.color = args.attr.fFillColor;
       }
+
+      let was_changed = this.changed; // preserve changed state
       this.change(args.color, args.pattern, args.svg, args.color_as_svg, args.painter);
+      this.changed = was_changed;
    }
 
    /** @summary Apply fill style to selection */
@@ -797,7 +896,7 @@ JSROOT.define(['d3'], (d3) => {
 
       if (color_as_svg) {
          this.color = color;
-         indx = 10000 + JSROOT._.id_counter++; // use fictional unique index far away from existing color indexes
+         indx = d3.color(color).hex().substr(1); // fictional index produced from color code
       } else {
          this.color = painter ? painter.getColor(indx) : jsrp.getColor(indx);
       }
@@ -823,10 +922,8 @@ JSROOT.define(['d3'], (d3) => {
       this.pattern_url = "url(#" + id + ")";
       this.antialias = false;
 
-      if (!defs.select("." + id).empty()) {
-         if (color_as_svg) console.log('find id in def', id);
+      if (!defs.select("." + id).empty())
          return true;
-      }
 
       let lines = "", lfill = null, fills = "", fills2 = "", w = 2, h = 2;
 
@@ -872,29 +969,37 @@ JSROOT.define(['d3'], (d3) => {
             }
 
             let code = this.pattern % 1000,
-               k = code % 10, j = ((code - k) % 100) / 10, i = (code - j * 10 - k) / 100;
+               k = code % 10,
+               j = ((code - k) % 100) / 10,
+               i = (code - j * 10 - k) / 100;
             if (!i) break;
 
-            let sz = i * 12;  // axis distance between lines
+            let sz = i * 12, pos, step, x1, x2, y1, y2, max;  // axis distance between lines
 
             w = h = 6 * sz; // we use at least 6 steps
 
-            function produce(dy, swap) {
-               let pos = [], step = sz, y1 = 0, y2, max = h;
+            let produce = (dy, swap) => {
+               pos = []; step = sz; y1 = 0; max = h;
 
                // reduce step for smaller angles to keep normal distance approx same
                if (Math.abs(dy) < 3) step = Math.round(sz / 12 * 9);
-               if (dy == 0) { step = Math.round(sz / 12 * 8); y1 = step / 2; }
-               else if (dy > 0) max -= step; else y1 = step;
+               if (dy == 0) {
+                  step = Math.round(sz / 12 * 8);
+                  y1 = step / 2;
+               } else if (dy > 0) {
+                  max -= step;
+               } else {
+                  y1 = step;
+               }
 
                while (y1 <= max) {
                   y2 = y1 + dy * step;
                   if (y2 < 0) {
-                     let x2 = Math.round(y1 / (y1 - y2) * w);
+                     x2 = Math.round(y1 / (y1 - y2) * w);
                      pos.push(0, y1, x2, 0);
                      pos.push(w, h - y1, w - x2, h);
                   } else if (y2 > h) {
-                     let x2 = Math.round((h - y1) / (y2 - y1) * w);
+                     x2 = Math.round((h - y1) / (y2 - y1) * w);
                      pos.push(0, y1, x2, h);
                      pos.push(w, h - y1, w - x2, 0);
                   } else {
@@ -902,10 +1007,18 @@ JSROOT.define(['d3'], (d3) => {
                   }
                   y1 += step;
                }
-               for (let k = 0; k < pos.length; k += 4)
-                  if (swap) lines += "M" + pos[k + 1] + "," + pos[k] + "L" + pos[k + 3] + "," + pos[k + 2];
-                  else lines += "M" + pos[k] + "," + pos[k + 1] + "L" + pos[k + 2] + "," + pos[k + 3];
-            }
+               for (let k = 0; k < pos.length; k += 4) {
+                  if (swap) { x1 = pos[k+1]; y1 = pos[k]; x2 = pos[k+3]; y2 = pos[k+2]; }
+                       else { x1 = pos[k]; y1 = pos[k+1]; x2 = pos[k+2]; y2 = pos[k+3]; }
+                   lines += "M"+x1+","+y1;
+                   if (y2 == y1)
+                      lines += "h"+(x2-x1);
+                   else if (x2 == x1)
+                      lines += "v"+(y2-y1);
+                   else
+                      lines += "L"+x2+","+y2;
+               }
+            };
 
             switch (j) {
                case 0: produce(0); break;

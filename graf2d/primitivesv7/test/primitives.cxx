@@ -18,18 +18,18 @@ TEST(Primitives, RBox)
 
    box->border.color = RColor::kRed;
    box->border.width = 5.;
-   box->border.style = 7;
+   box->border.style = RAttrLine::kDotted;
    box->fill.color = RColor::kBlue;
-   box->fill.style = 6;
+   box->fill.style = RAttrFill::k3006;
 
    EXPECT_EQ(canv.NumPrimitives(), 1u);
 
    EXPECT_EQ(box->border.color, RColor::kRed);
    EXPECT_DOUBLE_EQ(box->border.width, 5.);
-   EXPECT_EQ(box->border.style, 7);
+   EXPECT_EQ(box->border.style, RAttrLine::kDotted);
 
    EXPECT_EQ(box->fill.color, RColor::kBlue);
-   EXPECT_EQ(box->fill.style, 6);
+   EXPECT_EQ(box->fill.style, RAttrFill::k3006);
 }
 
 // Test RLine API
@@ -40,7 +40,7 @@ TEST(Primitives, RLine)
 
    line->line.color = RColor::kRed;
    line->line.width = 5.;
-   line->line.style = 7;
+   line->line.style = RAttrLine::kDashDotted;
    line->onFrame = true;
    line->clipping = false;
 
@@ -48,7 +48,7 @@ TEST(Primitives, RLine)
 
    EXPECT_EQ(line->line.color, RColor::kRed);
    EXPECT_DOUBLE_EQ(line->line.width, 5.);
-   EXPECT_EQ(line->line.style, 7);
+   EXPECT_EQ(line->line.style, RAttrLine::kDashDotted);
    EXPECT_EQ(line->onFrame, true);
    EXPECT_EQ(line->clipping, false);
 }
@@ -59,12 +59,12 @@ TEST(Primitives, RMarker)
    RCanvas canv;
    auto marker = canv.Draw<RMarker>(RPadPos(0.5_normal, 0.5_normal));
 
-   marker->marker = RAttrMarker(RColor::kGreen, 2.5, RAttrMarker::kStar);
+   marker->marker = RAttrMarker(RColor::kGreen, 0.05, RAttrMarker::kStar);
 
    EXPECT_EQ(canv.NumPrimitives(), 1u);
 
    EXPECT_EQ(marker->marker.color, RColor::kGreen);
-   EXPECT_DOUBLE_EQ(marker->marker.size, 2.5);
+   EXPECT_DOUBLE_EQ(marker->marker.size, 0.05);
    EXPECT_EQ(marker->marker.style, RAttrMarker::kStar);
 }
 
@@ -78,7 +78,7 @@ TEST(Primitives, RText)
    text->text.color = RColor::kBlack;
    text->text.size = 12.5;
    text->text.angle = 90.;
-   text->text.align = 13;
+   text->text.align = RAttrText::kLeftTop;
    text->text.font.family = "Arial";
 
    EXPECT_EQ(canv.NumPrimitives(), 1u);
@@ -87,7 +87,7 @@ TEST(Primitives, RText)
    EXPECT_EQ(text->text.color, RColor::kBlack);
    EXPECT_DOUBLE_EQ(text->text.size, 12.5);
    EXPECT_DOUBLE_EQ(text->text.angle, 90.);
-   EXPECT_EQ(text->text.align, 13);
+   EXPECT_EQ(text->text.align, RAttrText::kLeftTop);
    EXPECT_EQ(text->text.font.family, "Arial");
 }
 
@@ -104,22 +104,50 @@ TEST(Primitives, RLegend)
    line3->line.color = RColor::kBlue;
 
    auto legend = canv.Draw<RLegend>("Legend title");
-   legend->fill.style = 5;
+   legend->fill.style = RAttrFill::k3005;
    legend->fill.color = RColor::kWhite;
    legend->border.width = 2.;
    legend->border.color = RColor::kRed;
-   legend->AddEntry(line1, "RLine 1");
-   legend->AddEntry(line2, "RLine 2");
-   legend->AddEntry(line3, "RLine 3");
+   legend->AddEntry(line1, "RLine 1", "l");
+   legend->AddEntry(line2, "RLine 2", "l");
+   legend->AddEntry(line3, "RLine 3", "l");
+
+   auto custom = legend->AddEntry("test", "lfm");
+   custom->line.color = RColor::kGreen;
+   custom->line.width = 5.;
+   custom->line.style = RAttrLine::kDashed;
+   custom->fill.color = RColor::kBlue;
+   custom->fill.style = RAttrFill::k3004;
+   custom->marker.color = RColor::kRed;
+   custom->marker.size = 0.01;
+   custom->marker.style = RAttrMarker::kOpenCross;
 
    EXPECT_EQ(canv.NumPrimitives(), 4u);
 
-   EXPECT_EQ(legend->NumEntries(), 3u);
+   EXPECT_EQ(legend->NumEntries(), 4u);
    EXPECT_EQ(legend->GetTitle(), "Legend title");
-   EXPECT_EQ(legend->fill.style, 5);
+   EXPECT_EQ(legend->fill.style, RAttrFill::k3005);
    EXPECT_EQ(legend->fill.color, RColor::kWhite);
    EXPECT_EQ(legend->border.width, 2.);
    EXPECT_EQ(legend->border.color, RColor::kRed);
+
+   EXPECT_EQ(legend->GetEntry(0).GetLine(), true);
+   EXPECT_EQ(legend->GetEntry(1).GetFill(), false);
+   EXPECT_EQ(legend->GetEntry(2).GetMarker(), false);
+
+   EXPECT_EQ(legend->GetEntry(3).GetLine(), true);
+   EXPECT_EQ(legend->GetEntry(3).GetFill(), true);
+   EXPECT_EQ(legend->GetEntry(3).GetMarker(), true);
+   auto custom2 = std::dynamic_pointer_cast<RLegend::RCustomDrawable>(legend->GetEntry(3).GetDrawable());
+
+   EXPECT_NE(custom2, nullptr);
+   EXPECT_EQ(custom2->line.color, RColor::kGreen);
+   EXPECT_EQ(custom2->line.style, RAttrLine::kDashed);
+   EXPECT_EQ(custom2->fill.color, RColor::kBlue);
+   EXPECT_EQ(custom2->fill.style, RAttrFill::k3004);
+   EXPECT_EQ(custom2->marker.color, RColor::kRed);
+   EXPECT_EQ(custom2->marker.style, RAttrMarker::kOpenCross);
+   EXPECT_DOUBLE_EQ(custom2->marker.size, 0.01);
 }
 
 // Test RPaveText API
@@ -131,12 +159,12 @@ TEST(Primitives, RPaveText)
 
    text->text.color = RColor::kBlack;
    text->text.size = 12;
-   text->text.align = 13;
+   text->text.align = RAttrText::kLeftTop;
    text->text.font.family = "Times New Roman";
    text->border.color = RColor::kRed;
    text->border.width = 3.;
    text->fill.color = RColor::kBlue;
-   text->fill.style = 3003;
+   text->fill.style = RAttrFill::k3003;
 
    text->AddLine("First line");
    text->AddLine("Second line");
@@ -151,12 +179,12 @@ TEST(Primitives, RPaveText)
 
    EXPECT_EQ(text->text.color, RColor::kBlack);
    EXPECT_DOUBLE_EQ(text->text.size, 12);
-   EXPECT_EQ(text->text.align, 13);
+   EXPECT_EQ(text->text.align, RAttrText::kLeftTop);
    EXPECT_EQ(text->text.font.family, "Times New Roman");
 
    EXPECT_EQ(text->border.color, RColor::kRed);
    EXPECT_DOUBLE_EQ(text->border.width, 3.);
 
    EXPECT_EQ(text->fill.color, RColor::kBlue);
-   EXPECT_EQ(text->fill.style, 3003);
+   EXPECT_EQ(text->fill.style, RAttrFill::k3003);
 }

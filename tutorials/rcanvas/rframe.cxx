@@ -43,9 +43,10 @@ void rframe()
    // configure RFrame with direct API calls
    auto frame = canvas->AddFrame();
    // frame->fill.color = RColor::kBlue;
+   // frame->fill.style = RAttrFill::kSolid;
    frame->border.color = RColor::kBlue;
    frame->border.width = 3;
-   frame->margins = 0.2_normal; // set all mergins first
+   frame->margins = 0.2_normal; // set all margins first
    frame->margins.top = 0.25_normal;
 
    // let frame draw axes without need of any histogram
@@ -71,7 +72,7 @@ void rframe()
    // draw line over the frame
    auto line0 = canvas->Draw<RLine>(RPadPos(100_px, .9_normal), RPadPos(900_px , .9_normal));
    auto text0 = canvas->Draw<RText>(RPadPos(100_px, .9_normal + 5_px), "Line drawn on pad, fix pixel length");
-   text0->text.align = 11;
+   text0->text.align = RAttrText::kLeftBottom;
 
    // draw line under the frame
    auto line1 = canvas->Draw<RLine>(RPadPos(.1_normal, .1_normal), RPadPos(.9_normal, .1_normal));
@@ -85,7 +86,7 @@ void rframe()
    auto text2 = canvas->Draw<RText>(RPadPos(-.2_normal - 5_px, -.1_normal), "Line drawn on frame, normalized coordinates");
    text2->onFrame = true; // or via CSS "onFrame: true;"
    text2->text.angle = 90;
-   text2->text.align = 11;
+   text2->text.align = RAttrText::kLeftBottom;
 
    // draw on right size of frame, user coordiante, moved and zoomed with frame
    auto line3 = canvas->Draw<RLine>(RPadPos(110_user, -.1_normal), RPadPos(110_user, 1.1_normal));
@@ -99,6 +100,7 @@ void rframe()
    // draw box before line at same position as line ending with 40x40 px size and clipping on
    auto box4 = canvas->Draw<RBox>(RPadPos(80_user - 20_px, 80_user - 20_px), RPadPos(80_user + 20_px, 80_user + 20_px));
    box4->fill.color = RColor::kBlue;
+   box4->fill.style = RAttrFill::kSolid;
    box4->clipping = true; // or via CSS "clipping: true;"
    box4->onFrame = true; // or via CSS "onFrame: true;"
 
@@ -114,6 +116,7 @@ void rframe()
    // draw box before line at same position as line ending with 40x40 px size
    auto box5 = canvas->Draw<RBox>(RPadPos(80_user - 20_px, 20_user - 20_px), RPadPos(80_user + 20_px, 20_user + 20_px));
    box5->fill.color = RColor::kYellow;
+   box5->fill.style = RAttrFill::kSolid;
    box5->onFrame = true; // or via CSS "onFrame: true;"
 
    // draw line in the frame, but disable default cutting by the frame borders
@@ -122,7 +125,7 @@ void rframe()
 
    auto text5 = canvas->Draw<RText>(RPadPos(20_user, 80_user), "clipping off");
    text5->onFrame = true; // or via CSS "onFrame: true;"
-   text5->text.align = 11;
+   text5->text.align = RAttrText::kLeftBottom;
 
    canvas->UseStyle(rframe_style);
 

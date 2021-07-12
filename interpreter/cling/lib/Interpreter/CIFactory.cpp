@@ -806,7 +806,7 @@ static void stringifyPreprocSetting(PreprocessorOptions& PPOpts,
     // FIXME: Silly workaround for cling not being able to parse the STL
     //        headers anymore after the update of Visual Studio v16.7.0
     //        To be checked/removed after the upgrade of LLVM & Clang
-    PPOpts.addMacroDef("__CUDACC__");
+    PPOpts.addMacroDef("_HAS_CONDITIONAL_EXPLICIT=0");
 #endif
 #endif
 
@@ -1310,6 +1310,9 @@ static void stringifyPreprocSetting(PreprocessorOptions& PPOpts,
         default: llvm_unreachable("Unrecognized C++ version");
       }
     }
+    // Warn on redundant parentheses surrounding declarator, e.g. `bool(i)`,
+    // whose parsing might not match the user intent.
+    argvCompile.push_back("-Wredundant-parens");
 
     // This argument starts the cling instance with the x86 target. Otherwise,
     // the first job in the joblist starts the cling instance with the nvptx

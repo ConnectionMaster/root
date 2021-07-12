@@ -31,12 +31,11 @@ JSROOT.define(['painter', 'v7gpad'], (jsrp) => {
            onframe      = this.v7EvalAttr("onFrame", false) ? pp.getFramePainter() : null,
            clipping     = onframe ? this.v7EvalAttr("clipping", false) : false,
            p1           = pp.getCoordinate(line.fP1, onframe),
-           p2           = pp.getCoordinate(line.fP2, onframe),
-           line_width   = this.v7EvalAttr("line_width", 1),
-           line_style   = this.v7EvalAttr("line_style", 1),
-           line_color   = this.v7EvalColor("line_color", "black");
+           p2           = pp.getCoordinate(line.fP2, onframe);
 
        this.createG(clipping ? "main_layer" : (onframe ? "upper_layer" : false));
+
+       this.createv7AttLine();
 
        this.draw_g
            .append("svg:line")
@@ -44,10 +43,7 @@ JSROOT.define(['painter', 'v7gpad'], (jsrp) => {
            .attr("y1", p1.y)
            .attr("x2", p2.x)
            .attr("y2", p2.y)
-           .style("stroke", line_color)
-           .attr("stroke-width", line_width)
-//        .attr("stroke-opacity", line_opacity)
-           .style("stroke-dasharray", jsrp.root_line_styles[line_style]);
+           .call(this.lineatt.func);
    }
 
    // =================================================================================
@@ -59,18 +55,13 @@ JSROOT.define(['painter', 'v7gpad'], (jsrp) => {
            onframe      = this.v7EvalAttr("onFrame", false) ? pp.getFramePainter() : null,
            clipping     = onframe ? this.v7EvalAttr("clipping", false) : false,
            p1           = pp.getCoordinate(box.fP1, onframe),
-           p2           = pp.getCoordinate(box.fP2, onframe),
-           line_width   = this.v7EvalAttr("border_width", 1),
-           line_style   = this.v7EvalAttr("border_style", 1),
-           line_color   = this.v7EvalColor("border_color", "black"),
-           fill_color   = this.v7EvalColor("fill_color", "white"),
-           fill_style   = this.v7EvalAttr("fill_style", 1),
-           border_rx    = this.v7EvalAttr("border_rx", 0),
-           border_ry    = this.v7EvalAttr("border_ry", 0);
+           p2           = pp.getCoordinate(box.fP2, onframe);
 
     this.createG(clipping ? "main_layer" : (onframe ? "upper_layer" : false));
 
-    if (fill_style == 0) fill_color = "none";
+    this.createv7AttLine("border_");
+
+    this.createv7AttFill();
 
     this.draw_g
         .append("svg:rect")
@@ -78,12 +69,8 @@ JSROOT.define(['painter', 'v7gpad'], (jsrp) => {
         .attr("width", p2.x-p1.x)
         .attr("y", p2.y)
         .attr("height", p1.y-p2.y)
-        .attr("rx", border_rx || null)
-        .attr("ry", border_ry || null)
-        .style("stroke", line_color)
-        .attr("stroke-width", line_width)
-        .attr("fill", fill_color)
-        .style("stroke-dasharray", jsrp.root_line_styles[line_style]);
+        .call(this.lineatt.func)
+        .call(this.fillatt.func);
    }
 
    // =================================================================================
@@ -93,19 +80,18 @@ JSROOT.define(['painter', 'v7gpad'], (jsrp) => {
            pp           = this.getPadPainter(),
            onframe      = this.v7EvalAttr("onFrame", false) ? pp.getFramePainter() : null,
            clipping     = onframe ? this.v7EvalAttr("clipping", false) : false,
-           p            = pp.getCoordinate(marker.fP, onframe),
-           marker_size  = this.v7EvalAttr( "marker_size", 1),
-           marker_style = this.v7EvalAttr( "marker_style", 1),
-           marker_color = this.v7EvalColor( "marker_color", "black"),
-           att          = new JSROOT.TAttMarkerHandler({ style: marker_style, color: marker_color, size: marker_size }),
-           path         = att.create(p.x, p.y);
+           p            = pp.getCoordinate(marker.fP, onframe);
 
        this.createG(clipping ? "main_layer" : (onframe ? "upper_layer" : false));
+
+       this.createv7AttMarker();
+
+       let path = this.markeratt.create(p.x, p.y);
 
        if (path)
           this.draw_g.append("svg:path")
                      .attr("d", path)
-                     .call(att.func);
+                     .call(this.markeratt.func);
    }
 
    // =================================================================================

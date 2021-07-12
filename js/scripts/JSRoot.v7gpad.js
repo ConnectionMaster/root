@@ -168,17 +168,19 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
       if (!dflts) dflts = {}; else
       if (typeof dflts == "number") dflts = { size: dflts };
 
-      let text_size   = this.v7EvalAttr(name + "_size", dflts.size || 12),
+      let pp = this.getPadPainter(),
+          rfont = pp._dfltRFont || { fFamily: "Arial", fStyle: "", fWeight: "" },
+          text_size   = this.v7EvalAttr(name + "_size", dflts.size || 12),
           text_angle  = this.v7EvalAttr(name + "_angle", 0),
           text_align  = this.v7EvalAttr(name + "_align", dflts.align || "none"),
           text_color  = this.v7EvalColor(name + "_color", dflts.color || "none"),
-          font_family = this.v7EvalAttr(name + "_font_family", "Arial"),
-          font_style  = this.v7EvalAttr(name + "_font_style", ""),
-          font_weight = this.v7EvalAttr(name + "_font_weight", "");
+          font_family = this.v7EvalAttr(name + "_font_family", rfont.fFamily || "Arial"),
+          font_style  = this.v7EvalAttr(name + "_font_style", rfont.fStyle || ""),
+          font_weight = this.v7EvalAttr(name + "_font_weight", rfont.fWeight || "");
 
        if (typeof text_size == "string") text_size = parseFloat(text_size);
        if (!Number.isFinite(text_size) || (text_size <= 0)) text_size = 12;
-       if (!fontScale) fontScale = this.getPadPainter().getPadHeight() || 10;
+       if (!fontScale) fontScale = pp.getPadHeight() || 100;
 
        let handler = new JSROOT.FontHandler(null, text_size, fontScale, font_family, font_style, font_weight);
 
@@ -195,11 +197,9 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
       if (!prefix || (typeof prefix != "string")) prefix = "fill_";
 
       let fill_color = this.v7EvalColor(prefix + "color", ""),
-          fill_style = this.v7EvalAttr(prefix + "style", 1001);
+          fill_style = this.v7EvalAttr(prefix + "style", 0);
 
-      this.createAttFill({ pattern: fill_style, color: 0 });
-
-      this.fillatt.setSolidColor(fill_color || "none");
+      this.createAttFill({ pattern: fill_style, color: fill_color,  color_as_svg: true });
    }
 
    /** @summary Create this.lineatt object based on v7 line attributes
@@ -209,14 +209,13 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
 
       let line_color = this.v7EvalColor(prefix + "color", "black"),
           line_width = this.v7EvalAttr(prefix + "width", 1),
-          line_style = this.v7EvalAttr(prefix + "style", 1);
+          line_style = this.v7EvalAttr(prefix + "style", 1),
+          line_pattern = this.v7EvalAttr(prefix + "pattern");
 
-      this.createAttLine({ color: line_color, width: line_width, style: line_style });
+      this.createAttLine({ color: line_color, width: line_width, style: line_style, pattern: line_pattern });
 
-      if (prefix == "border_") {
-         this.lineatt.rx = this.v7EvalAttr(prefix + "rx", 0);
-         this.lineatt.ry = this.v7EvalAttr(prefix + "ry", 0);
-      }
+      if (prefix == "border_")
+         this.lineatt.setBorder(this.v7EvalAttr(prefix + "rx", 0), this.v7EvalAttr(prefix + "ry", 0));
    }
 
     /** @summary Create this.markeratt object based on v7 attributes
@@ -225,10 +224,15 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
       if (!prefix || (typeof prefix != "string")) prefix = "marker_";
 
       let marker_color = this.v7EvalColor(prefix + "color", "black"),
-          marker_size = this.v7EvalAttr(prefix + "size", 1),
-          marker_style = this.v7EvalAttr(prefix + "style", 1);
+          marker_size = this.v7EvalAttr(prefix + "size", 0.01),
+          marker_style = this.v7EvalAttr(prefix + "style", 1),
+          marker_refsize = 1;
+      if (marker_size < 1) {
+         let pp = this.getPadPainter();
+         marker_refsize = pp ? pp.getPadHeight() : 100;
+      }
 
-      this.createAttMarker({ color: marker_color, size: marker_size, style: marker_style });
+      this.createAttMarker({ color: marker_color, size: marker_size, style: marker_style, refsize: marker_refsize });
    }
 
    /** @summary Create RChangeAttr, which can be applied on the server side
@@ -1525,7 +1529,7 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
       }
 
       if (!this.fillatt)
-         this.createv7AttFill("fill_");
+         this.createv7AttFill();
 
       this.createv7AttLine("border_");
    }
@@ -2720,6 +2724,7 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
       delete this._pad_width;
       delete this._pad_height;
       delete this._doing_draw;
+      delete this._dfltRFont;
 
       this.painters = [];
       this.pad = null;
@@ -4857,38 +4862,21 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
       return Promise.resolve(this);
    }
 
+   const ECorner = { kTopLeft: 1, kTopRight: 2, kBottomLeft: 3, kBottomRight: 4 };
+
    RPavePainter.prototype.drawPave = function() {
 
       let rect = this.getPadPainter().getPadRect(),
-          fp = this.getFramePainter(),
-          fx, fy, fw;
+          fp = this.getFramePainter();
 
-      if (fp) {
-         let frame_rect = fp.getFrameRect();
-         fx = frame_rect.x;
-         fy = frame_rect.y;
-         fw = frame_rect.width;
-         // fh = frame_rect.height;
-      } else {
-         let st = JSROOT.gStyle;
-         fx = Math.round(st.fPadLeftMargin * rect.width);
-         fy = Math.round(st.fPadTopMargin * rect.height);
-         fw = Math.round((1-st.fPadLeftMargin-st.fPadRightMargin) * rect.width);
-         // fh = Math.round((1-st.fPadTopMargin-st.fPadBottomMargin) * rect.height);
-      }
+      this.onFrame = fp && this.v7EvalAttr("onFrame", true);
+      this.corner = this.v7EvalAttr("corner", ECorner.kTopRight);
 
       let visible      = this.v7EvalAttr("visible", true),
-          pave_cornerx = this.v7EvalLength("cornerX", rect.width, 0.02),
-          pave_cornery = this.v7EvalLength("cornerY", rect.height, -0.02),
+          offsetx      = this.v7EvalLength("offsetX", rect.width, 0.02),
+          offsety      = this.v7EvalLength("offsetY", rect.height, 0.02),
           pave_width   = this.v7EvalLength("width", rect.width, 0.3),
-          pave_height  = this.v7EvalLength("height", rect.height, 0.3),
-          line_width   = this.v7EvalAttr("border_width", 1),
-          line_style   = this.v7EvalAttr("border_style", 1),
-          line_color   = this.v7EvalColor("border_color", "black"),
-          border_rx    = this.v7EvalAttr("border_rx", 0),
-          border_ry    = this.v7EvalAttr("border_ry", 0),
-          fill_color   = this.v7EvalColor("fill_color", "white"),
-          fill_style   = this.v7EvalAttr("fill_style", 1);
+          pave_height  = this.v7EvalLength("height", rect.height, 0.3);
 
       this.createG();
 
@@ -4896,10 +4884,30 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
 
       if (!visible) return Promise.resolve(this);
 
-      if (fill_style == 0) fill_color = "none";
+      this.createv7AttLine("border_");
 
-      let pave_x = Math.round(fx + fw + pave_cornerx - pave_width),
-          pave_y = Math.round(fy + pave_cornery);
+      this.createv7AttFill();
+
+      let pave_x = 0, pave_y = 0,
+          fr = this.onFrame ? fp.getFrameRect() : rect;
+      switch (this.corner) {
+         case ECorner.kTopLeft:
+            pave_x = fr.x + offsetx;
+            pave_y = fr.y + offsety;
+            break;
+         case ECorner.kBottomLeft:
+            pave_x = fr.x + offsetx;
+            pave_y = fr.y + fr.height - offsety - pave_height;
+            break;
+         case ECorner.kBottomRight:
+            pave_x = fr.x + fr.width - offsetx - pave_width;
+            pave_y = fr.y + fr.height - offsety - pave_height;
+            break;
+         case ECorner.kTopRight:
+         default:
+            pave_x = fr.x + fr.width - offsetx - pave_width;
+            pave_y = fr.y + offsety;
+      }
 
       // x,y,width,height attributes used for drag functionality
       this.draw_g.attr("transform", "translate(" + pave_x + "," + pave_y + ")")
@@ -4911,12 +4919,8 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
                  .attr("width", pave_width)
                  .attr("y", 0)
                  .attr("height", pave_height)
-                 .attr("rx", border_rx || null)
-                 .attr("ry", border_ry || null)
-                 .style("stroke", line_color)
-                 .attr("stroke-width", line_width)
-                 .style("stroke-dasharray", jsrp.root_line_styles[line_style])
-                 .attr("fill", fill_color);
+                 .call(this.lineatt.func)
+                 .call(this.fillatt.func);
 
       this.pave_width = pave_width;
       this.pave_height = pave_height;
@@ -4947,26 +4951,31 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
       let pave_x = parseInt(this.draw_g.attr("x")),
           pave_y = parseInt(this.draw_g.attr("y")),
           rect = this.getPadPainter().getPadRect(),
-          fp = this.getFramePainter(),
-          fx, fy, fw;
+          fr = this.onFrame ? this.getFramePainter().getFrameRect() : rect,
+          offsetx = 0, offsety = 0, changes = {};
 
-      if (fp) {
-         let frame_rect = fp.getFrameRect();
-         fx = frame_rect.x;
-         fy = frame_rect.y;
-         fw = frame_rect.width;
-         // fh = frame_rect.height;
-      } else {
-         let st = JSROOT.gStyle;
-         fx = Math.round(st.fPadLeftMargin * rect.width);
-         fy = Math.round(st.fPadTopMargin * rect.height);
-         fw = Math.round((1-st.fPadLeftMargin-st.fPadRightMargin) * rect.width);
-         // fh = Math.round((1-st.fPadTopMargin-st.fPadBottomMargin) * rect.height);
+      switch (this.corner) {
+         case ECorner.kTopLeft:
+            offsetx = pave_x - fr.x;
+            offsety = pave_y - fr.y;
+            break;
+         case ECorner.kBottomLeft:
+            offsetx = pave_x - fr.x;
+            offsety = fr.y + fr.height - pave_y - this.pave_height;
+            break;
+         case ECorner.kBottomRight:
+            offsetx = fr.x + fr.width - pave_x - this.pave_width;
+            offsety = fr.y + fr.height - pave_y - this.pave_height;
+            break;
+         case ECorner.kTopRight:
+         default:
+            offsetx = fr.x + fr.width - pave_x - this.pave_width;
+            offsety = pave_y - fr.y;
       }
 
-      let changes = {};
-      this.v7AttrChange(changes, "cornerX", (pave_x + this.pave_width - fx - fw) / rect.width);
-      this.v7AttrChange(changes, "cornerY", (pave_y - fy) / rect.height);
+
+      this.v7AttrChange(changes, "offsetX", offsetx / rect.width);
+      this.v7AttrChange(changes, "offsetY", offsety / rect.height);
       this.v7AttrChange(changes, "width", this.pave_width / rect.width);
       this.v7AttrChange(changes, "height", this.pave_height / rect.height);
       this.v7SendAttrChanges(changes, false); // do not invoke canvas update on the server
@@ -5009,7 +5018,7 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
           title_margin = this.v7EvalLength("margin", ph, 0.02),
           title_width  = fw,
           title_height = this.v7EvalLength("height", ph, 0.05),
-          textFont     = this.v7EvalFont("text", { size: 24, color: "black", align: 22 });
+          textFont     = this.v7EvalFont("text", { size: 0.07, color: "black", align: 22 });
 
       this.createG();
 
@@ -5454,9 +5463,9 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
    }
 
    function drawRFont() {
-      let font      = this.getObject(),
-          svg       = this.getCanvSvg(),
-          defs      = svg.select('.canvas_defs'),
+      let font   = this.getObject(),
+          svg    = this.getCanvSvg(),
+          defs   = svg.select('.canvas_defs'),
           clname = "custom_font_" + font.fFamily+font.fWeight+font.fStyle;
 
       if (defs.empty())
@@ -5467,6 +5476,9 @@ JSROOT.define(['d3', 'painter'], (d3, jsrp) => {
          entry = defs.append("style").attr("type", "text/css").attr("class", clname);
 
       entry.text(`@font-face { font-family: "${font.fFamily}"; font-weight: ${font.fWeight ? font.fWeight : "normal"}; font-style: ${font.fStyle ? font.fStyle : "normal"}; src: ${font.fSrc}; }`);
+
+      if (font.fDefault)
+         this.getPadPainter()._dfltRFont = font;
 
       return true;
    }
