@@ -4,6 +4,68 @@
 # For the licensing terms see $ROOTSYS/LICENSE.
 # For the list of contributors see $ROOTSYS/README/CREDITS.
 
+#----------------------------------------------------------------------------
+# macro ROOT_CHECK_CONNECTION(option)
+# Try to download a file to check internet connection.
+# If fail-on-missing=ON is set, a failed connection check will cause a fatal
+# configuration error.
+# Input variables:
+#    option:
+#        A hint to the user on which option to set to avoid the part of the
+#        configuration that requested the connection check.
+# Output variables:
+#    NO_CONNECTION:
+#        This variable is set based on the result of the connection check:
+#          - FALSE: An active internet connection was found.
+#          - TRUE: No internet connection was found or the download failed.
+# Note: if the value of NO_CONNECTION is already FALSE, when calling the
+#       macro, the connection check will not run again.
+#----------------------------------------------------------------------------
+macro(ROOT_CHECK_CONNECTION option)
+    # Do something only if connection check is not already done
+  if(NOT DEFINED NO_CONNECTION)
+    message(STATUS "Checking internet connectivity")
+    file(DOWNLOAD https://root.cern/files/cmake_connectivity_test.txt ${CMAKE_CURRENT_BINARY_DIR}/cmake_connectivity_test.txt
+      TIMEOUT 10 STATUS DOWNLOAD_STATUS
+    )
+    # Get the status code from the download status
+    list(GET DOWNLOAD_STATUS 0 STATUS_CODE)
+    # Check if download was successful.
+    if(${STATUS_CODE} EQUAL 0)
+      # Succcess
+      message(STATUS "Checking internet connectivity - found")
+      # Now let's delete the file
+      file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/cmake_connectivity_test.txt)
+      set(NO_CONNECTION FALSE)
+    else()
+      # Error
+      if(fail-on-missing)
+        message(FATAL_ERROR "No internet connection. Please check your connection, set '-D${option}' or disable 'fail-on-missing' to automatically disable options requiring internet access")
+      endif()
+      message(STATUS "Checking internet connectivity - failed: will not automatically download external dependencies")
+      set(NO_CONNECTION TRUE)
+    endif()
+  endif()
+endmacro()
+
+#----------------------------------------------------------------------------
+# macro ROOT_CHECK_CONNECTION_AND_DISABLE_OPTION(option_name)
+# Check internet connection. If no connection, either disable the option or
+# stop the configuration with a FATAL_ERROR in case of fail-on-missing=ON.
+#----------------------------------------------------------------------------
+macro(ROOT_CHECK_CONNECTION_AND_DISABLE_OPTION option_name)
+  ROOT_CHECK_CONNECTION("$(option_name)=OFF")
+  if(NO_CONNECTION)
+    message(STATUS "No internet connection, disabling '${option_name}' option")
+    set(${option_name} OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
+  endif()
+endmacro()
+
+# Building Clad requires an internet connection, if we're not side-loading the source directory
+if(clad AND NOT DEFINED CLAD_SOURCE_DIR)
+  ROOT_CHECK_CONNECTION_AND_DISABLE_OPTION("clad")
+endif()
+
 #---Check for installed packages depending on the build options/components enabled --
 include(CheckCXXSourceCompiles)
 include(CheckIncludeFileCXX)
@@ -38,9 +100,6 @@ if(cocoa)
   if(APPLE)
     set(x11 OFF CACHE BOOL "Disabled because cocoa requested (${x11_description})" FORCE)
     set(builtin_freetype ON CACHE BOOL "Enabled because needed for Cocoa graphics (${builtin_freetype_description})" FORCE)
-    if(NOT opengl)
-      message(FATAL_ERROR "Option \"cocoa=ON\" requires \"opengl=ON\"!")
-    endif()
   else()
     message(STATUS "Cocoa option can only be enabled on MacOSX platform")
     set(cocoa OFF CACHE BOOL "Disabled because only available on MacOSX (${cocoa_description})" FORCE)
@@ -473,13 +532,8 @@ endif()
 
 #---Check for GSL library---------------------------------------------------------------
 if(mathmore OR builtin_gsl)
-  if(builtin_gsl AND NO_CONNECTION)
-    if(fail-on-missing)
-      message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_gsl' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-    else()
-      message(STATUS "No internet connection, disabling 'builtin_gsl' option")
-      set(builtin_gsl OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-    endif()
+  if(builtin_gsl)
+    ROOT_CHECK_CONNECTION_AND_DISABLE_OPTION("builtin_gsl")
   endif()
   message(STATUS "Looking for GSL")
   if(NOT builtin_gsl)
@@ -550,7 +604,9 @@ endif()
 find_package(Python3 3.8 COMPONENTS ${python_components})
 
 #---Check for OpenGL installation-------------------------------------------------------
-if(opengl)
+# OpenGL is required by various graf3d features that are enabled with opengl=ON,
+# or by the Cocoa-related code that always requires it.
+if(opengl OR cocoa)
   message(STATUS "Looking for OpenGL")
   if(APPLE)
     set(CMAKE_FIND_FRAMEWORK FIRST)
@@ -578,10 +634,17 @@ if(NOT WIN32 AND NOT APPLE)
     set(opengl OFF CACHE BOOL "OpenGL requires x11" FORCE)
   endif()
 endif()
+# The opengl flag enables the graf3d features that depend on OpenGL, and these
+# features also depend on asimage. Therefore, the configuration will fail if
+# asimage is off. See also: https://github.com/root-project/root/issues/16250
+if(opengl AND NOT asimage)
+  message(FATAL_ERROR "OpenGL features enabled with \"opengl=ON\" require \"asimage=ON\"")
+endif()
 
 #---Check for GLEW -------------------------------------------------------------------
-# Opengl is "must" requirement for Glew.
-if(opengl AND NOT builtin_glew)
+# Glew is required by various graf3d features that are enabled with opengl=ON,
+# or by the Cocoa-related code that always requires it.
+if((opengl OR cocoa) AND NOT builtin_glew)
   message(STATUS "Looking for GLEW")
   if(fail-on-missing)
     find_package(GLEW REQUIRED)
@@ -608,6 +671,7 @@ endif()
 
 if(builtin_glew)
   list(APPEND ROOT_BUILTINS GLEW)
+  add_library(GLEW::GLEW INTERFACE IMPORTED GLOBAL)
   add_subdirectory(builtins/glew)
 endif()
 
@@ -668,13 +732,10 @@ if(ssl AND NOT builtin_openssl)
         message(STATUS "Switching OFF 'ssl' option.")
         set(ssl OFF CACHE BOOL "Disabled because OpenSSL not found and builtin version only works on macOS (${ssl_description})" FORCE)
       else()
+        ROOT_CHECK_CONNECTION("ssl=OFF")
         if(NO_CONNECTION)
-          if(fail-on-missing)
-            message(FATAL_ERROR "No internet connection and OpenSSL was not found. Please check your connection, or either disable the 'ssl' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-          else()
-            message(STATUS "OpenSSL not found, and no internet connection. Disabing the 'ssl' option.")
-            set(ssl OFF CACHE BOOL "Disabled because ssl requested and OpenSSL not found (${builtin_openssl_description}) and there is no internet connection" FORCE)
-          endif()
+          message(STATUS "OpenSSL not found, and no internet connection. Disabling the 'ssl' option.")
+          set(ssl OFF CACHE BOOL "Disabled because ssl requested and OpenSSL not found (${builtin_openssl_description}) and there is no internet connection" FORCE)
         else()
           message(STATUS "OpenSSL not found, switching ON 'builtin_openssl' option.")
           set(builtin_openssl ON CACHE BOOL "Enabled because ssl requested and OpenSSL not found (${builtin_openssl_description})" FORCE)
@@ -685,14 +746,11 @@ if(ssl AND NOT builtin_openssl)
 endif()
 
 if(builtin_openssl)
+  ROOT_CHECK_CONNECTION("builtin_openssl=OFF")
   if(NO_CONNECTION)
-    if(fail-on-missing)
-      message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_openssl' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-    else()
-      message(STATUS "No internet connection, disabling the 'ssl' and 'builtin_openssl' options")
-      set(builtin_openssl OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-      set(ssl OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-    endif()
+    message(STATUS "No internet connection, disabling the 'ssl' and 'builtin_openssl' options")
+    set(builtin_openssl OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
+    set(ssl OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
   else()
     list(APPEND ROOT_BUILTINS OpenSSL)
     add_subdirectory(builtins/openssl)
@@ -784,13 +842,8 @@ if(pythia8)
   endif()
 endif()
 
-if(builtin_fftw3 AND NO_CONNECTION)
-  if(fail-on-missing)
-    message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_fftw3' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-  else()
-    message(STATUS "No internet connection, disabling 'builtin_fftw3' option")
-    set(builtin_fftw3 OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-  endif()
+if(builtin_fftw3)
+  ROOT_CHECK_CONNECTION_AND_DISABLE_OPTION("builtin_fftw3")
 endif()
 
 #---Check for FFTW3-------------------------------------------------------------------
@@ -833,13 +886,8 @@ endif()
 
 #---Check for fitsio-------------------------------------------------------------------
 if(fitsio OR builtin_cfitsio)
-  if(builtin_cfitsio AND NO_CONNECTION)
-    if(fail-on-missing)
-      message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_cfitsio' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-    else()
-      message(STATUS "No internet connection, disabling 'builtin_cfitsio' option")
-      set(builtin_cfitsio OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-    endif()
+  if(builtin_cfitsio)
+    ROOT_CHECK_CONNECTION_AND_DISABLE_OPTION("builtin_cfitsio")
   endif()
   if(builtin_cfitsio)
     add_library(CFITSIO::CFITSIO STATIC IMPORTED GLOBAL)
@@ -891,22 +939,31 @@ if(xrootd AND NOT builtin_xrootd)
       message(FATAL_ERROR "XROOTD not found. Set environment variable XRDSYS to point to your XROOTD installation, "
                           "or include the installation of XROOTD in the CMAKE_PREFIX_PATH. "
                           "Alternatively, you can also enable the option 'builtin_xrootd' to build XROOTD internally")
-    elseif(NO_CONNECTION)
-      message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_xrootd'"
-        " option or the 'fail-on-missing' to automatically disable options requiring internet access")
     else()
-      message(STATUS "XROOTD not found, enabling 'builtin_xrootd' option")
-      set(builtin_xrootd ON CACHE BOOL "Enabled because xrootd is enabled, but external xrootd was not found (${xrootd_description})" FORCE)
+      ROOT_CHECK_CONNECTION("xrootd=OFF")
+      if(NO_CONNECTION)
+        message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_xrootd'"
+          " option or the 'fail-on-missing' to automatically disable options requiring internet access")
+      else()
+        message(STATUS "XROOTD not found, enabling 'builtin_xrootd' option")
+        set(builtin_xrootd ON CACHE BOOL "Enabled because xrootd is enabled, but external xrootd was not found (${xrootd_description})" FORCE)
+      endif()
     endif()
   endif()
 endif()
 
 if(builtin_xrootd)
+  ROOT_CHECK_CONNECTION("builtin_xrootd=OFF")
   if(NO_CONNECTION)
     message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_xrootd'"
       " option or the 'fail-on-missing' to automatically disable options requiring internet access")
   endif()
   list(APPEND ROOT_BUILTINS BUILTIN_XROOTD)
+  # The builtin XRootD requires OpenSSL.
+  # We have to find it here, such that OpenSSL is available in this scope to
+  # finalize the XRootD target configuration.
+  # See also: https://github.com/root-project/root/issues/16374
+  find_package(OpenSSL REQUIRED)
   add_subdirectory(builtins/xrootd)
   set(xrootd ON CACHE BOOL "Enabled because builtin_xrootd requested (${xrootd_description})" FORCE)
 endif()
@@ -1067,39 +1124,15 @@ if(davix AND NOT builtin_davix)
 endif()
 
 if(builtin_davix)
+  ROOT_CHECK_CONNECTION("builtin_davix=OFF")
   if(NO_CONNECTION)
-    if(fail-on-missing)
-      message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_davix' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-    else()
-      message(STATUS "No internet connection, disabling the 'davix' and 'builtin_davix' options")
-      set(builtin_davix OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-      set(davix OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-      endif()
+    message(STATUS "No internet connection, disabling the 'davix' and 'builtin_davix' options")
+    set(builtin_davix OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
+    set(davix OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
   else()
     list(APPEND ROOT_BUILTINS Davix)
     add_subdirectory(builtins/davix)
     set(davix ON CACHE BOOL "Enabled because builtin_davix is enabled)" FORCE)
-  endif()
-endif()
-
-#---Check for TCMalloc---------------------------------------------------------------
-if (tcmalloc)
-  message(STATUS "Looking for tcmalloc")
-  find_package(tcmalloc)
-  if(NOT TCMALLOC_FOUND)
-    message(STATUS "TCMalloc not found.")
-  endif()
-endif()
-
-#---Check for JEMalloc---------------------------------------------------------------
-if (jemalloc)
-  if (tcmalloc)
-   message(FATAL_ERROR "Both tcmalloc and jemalloc were selected: this is an inconsistent setup.")
-  endif()
-  message(STATUS "Looking for jemalloc")
-  find_package(jemalloc)
-  if(NOT JEMALLOC_FOUND)
-    message(STATUS "JEMalloc not found.")
   endif()
 endif()
 
@@ -1192,10 +1225,9 @@ int main() { return 0; }" tbb_exception_result)
   set(TBB_CXXFLAGS "-DTBB_SUPPRESS_DEPRECATED_MESSAGES=1")
 endif()
 
-if(builtin_tbb AND NO_CONNECTION)
-  if(fail-on-missing)
-    message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_tbb' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-  else()
+if(builtin_tbb)
+  ROOT_CHECK_CONNECTION("builtin_tbb=OFF")
+  if(NO_CONNECTION)
     message(STATUS "No internet connection, disabling 'builtin_tbb' and 'imt' options")
     set(builtin_tbb OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
     set(imt OFF CACHE BOOL "Disabled because 'builtin_tbb' was set but there is no internet connection" FORCE)
@@ -1283,13 +1315,8 @@ elseif(vc)
   endif()
 endif()
 
-if(vc AND NOT Vc_FOUND AND NO_CONNECTION)
-  if(fail-on-missing)
-    message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'vc' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-  else()
-    message(STATUS "No internet connection, disabling the 'vc' option")
-    set(vc OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-  endif()
+if(vc AND NOT Vc_FOUND)
+  ROOT_CHECK_CONNECTION_AND_DISABLE_OPTION("vc")
 endif()
 
 if(vc AND NOT Vc_FOUND)
@@ -1370,6 +1397,7 @@ elseif(veccore)
   else()
     find_package(VecCore 0.4.2 CONFIG QUIET COMPONENTS ${VecCore_COMPONENTS})
     if(NOT VecCore_FOUND)
+      ROOT_CHECK_CONNECTION("veccore=OFF")
       if(NO_CONNECTION)
         message(STATUS "VecCore not found and no internet connection, disabling the 'veccore' option")
         set(veccore OFF CACHE BOOL "Disabled because not found and No internet connection" FORCE)
@@ -1384,13 +1412,8 @@ elseif(veccore)
   endif()
 endif()
 
-if(builtin_veccore AND NO_CONNECTION)
-  if(fail-on-missing)
-    message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_veccore' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-  else()
-    message(STATUS "No internet connection, disabling the 'builtin_veccore' option")
-    set(builtin_veccore OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-  endif()
+if(builtin_veccore)
+  ROOT_CHECK_CONNECTION_AND_DISABLE_OPTION("builtin_veccore")
 endif()
 
 if(builtin_veccore)
@@ -1457,13 +1480,8 @@ if(builtin_veccore)
   install(DIRECTORY ${VecCore_ROOTDIR}/ DESTINATION ".")
 endif()
 
-if(builtin_vdt AND NO_CONNECTION)
-  if(fail-on-missing)
-    message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'builtin_vdt' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-  else()
-    message(STATUS "No internet connection, disabling the 'builtin_vdt' option")
-    set(builtin_vdt OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-  endif()
+if(builtin_vdt)
+  ROOT_CHECK_CONNECTION_AND_DISABLE_OPTION("builtin_vdt")
 endif()
 
 #---Check for Vdt--------------------------------------------------------------------
@@ -1476,6 +1494,7 @@ if(vdt OR builtin_vdt)
         message(FATAL_ERROR "VDT not found. Ensure that the installation of VDT is in the CMAKE_PREFIX_PATH")
       else()
         message(STATUS "VDT not found. Ensure that the installation of VDT is in the CMAKE_PREFIX_PATH")
+        ROOT_CHECK_CONNECTION("vdt=OFF")
         if(NO_CONNECTION)
           set(vdt OFF CACHE BOOL "Disabled because not found and no internet connection" FORCE)
         else()
@@ -1758,20 +1777,18 @@ if (roofit_multiprocess)
 endif (roofit_multiprocess)
 
 #---Check for googletest---------------------------------------------------------------
-if (testing)
+if (testing OR testsupport)
   if (NOT builtin_gtest)
     if(fail-on-missing)
       find_package(GTest REQUIRED)
     else()
       find_package(GTest)
       if(NOT GTEST_FOUND)
+        ROOT_CHECK_CONNECTION("testing=OFF")
         if(NO_CONNECTION)
-          if(fail-on-missing)
-            message(FATAL_ERROR "No internet connection and GTest was not found. Please check your connection, or either disable the 'testing' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-          else()
-            message(STATUS "GTest not found, and no internet connection. Disabing the 'testing' option.")
-            set(testing OFF CACHE BOOL "Disabled because testing requested and GTest not found (${builtin_gtest_description}) and there is no internet connection" FORCE)
-          endif()
+          message(STATUS "GTest not found, and no internet connection. Disabling the 'testing' and 'testsupport' options.")
+          set(testing OFF CACHE BOOL "Disabled because testing requested and GTest not found (${builtin_gtest_description}) and there is no internet connection" FORCE)
+          set(testsupport OFF CACHE BOOL "Disabled because testsupport requested and GTest not found (${builtin_gtest_description}) and there is no internet connection" FORCE)
         else()
           message(STATUS "GTest not found, switching ON 'builtin_gtest' option.")
           set(builtin_gtest ON CACHE BOOL "Enabled because testing requested and GTest not found (${builtin_gtest_description})" FORCE)
@@ -1779,14 +1796,12 @@ if (testing)
       endif()
     endif()
   else()
+    ROOT_CHECK_CONNECTION("testing=OFF")
     if(NO_CONNECTION)
-      if(fail-on-missing)
-        message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'testing' option or the 'builtin_gtest' option or the 'fail-on-missing' option to automatically disable options requiring internet access")
-      else()
-        message(STATUS "No internet connection, disabling the 'testing' and 'builtin_gtest' options")
-        set(testing OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-        set(builtin_gtest OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-      endif()
+      message(STATUS "No internet connection, disabling the 'testing', 'testsupport' and 'builtin_gtest' options")
+      set(testing OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
+      set(testsupport OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
+      set(builtin_gtest OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
     endif()
   endif()
 endif()
@@ -1887,10 +1902,9 @@ if (builtin_gtest)
 
 endif()
 
-if(webgui AND NOT builtin_openui5 AND NO_CONNECTION)
-  if(fail-on-missing)
-    message(FATAL_ERROR "No internet connection. Please check your connection, or either enable the 'builtin_openui5' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-  else()
+if(webgui AND NOT builtin_openui5)
+  ROOT_CHECK_CONNECTION("builtin_openui5=ON")
+  if(NO_CONNECTION)
     message(STATUS "No internet connection, switching to 'builtin_openui5' option")
     set(builtin_openui5 ON CACHE BOOL "Enabled because there is no internet connection" FORCE)
   endif()

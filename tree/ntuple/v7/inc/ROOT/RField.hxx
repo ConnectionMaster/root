@@ -274,6 +274,18 @@ public:
 /// It is used in the templated RField<RNTupleCardinality<SizeT>> form, which represents the collection sizes either
 /// as 32bit unsigned int (std::uint32_t) or as 64bit unsigned int (std::uint64_t).
 class RCardinalityField : public RFieldBase {
+   friend class RNTupleCollectionView; // to access GetCollectionInfo()
+
+private:
+   void GetCollectionInfo(NTupleSize_t globalIndex, RClusterIndex *collectionStart, ClusterSize_t *size)
+   {
+      fPrincipalColumn->GetCollectionInfo(globalIndex, collectionStart, size);
+   }
+   void GetCollectionInfo(RClusterIndex clusterIndex, RClusterIndex *collectionStart, ClusterSize_t *size)
+   {
+      fPrincipalColumn->GetCollectionInfo(clusterIndex, collectionStart, size);
+   }
+
 protected:
    RCardinalityField(std::string_view fieldName, std::string_view typeName)
       : RFieldBase(fieldName, typeName, ENTupleStructure::kLeaf, false /* isSimple */)
@@ -338,35 +350,6 @@ public:
 
 namespace ROOT {
 namespace Experimental {
-
-template <>
-class RField<ClusterSize_t> final : public RSimpleField<ClusterSize_t> {
-protected:
-   std::unique_ptr<RFieldBase> CloneImpl(std::string_view newName) const final
-   {
-      return std::make_unique<RField>(newName);
-   }
-
-   const RColumnRepresentations &GetColumnRepresentations() const final;
-
-public:
-   static std::string TypeName() { return "ROOT::Experimental::ClusterSize_t"; }
-   explicit RField(std::string_view name) : RSimpleField(name, TypeName()) {}
-   RField(RField &&other) = default;
-   RField &operator=(RField &&other) = default;
-   ~RField() override = default;
-
-   /// Special help for offset fields
-   void GetCollectionInfo(NTupleSize_t globalIndex, RClusterIndex *collectionStart, ClusterSize_t *size)
-   {
-      fPrincipalColumn->GetCollectionInfo(globalIndex, collectionStart, size);
-   }
-   void GetCollectionInfo(RClusterIndex clusterIndex, RClusterIndex *collectionStart, ClusterSize_t *size)
-   {
-      fPrincipalColumn->GetCollectionInfo(clusterIndex, collectionStart, size);
-   }
-   void AcceptVisitor(Detail::RFieldVisitor &visitor) const final;
-};
 
 template <typename SizeT>
 class RField<RNTupleCardinality<SizeT>> final : public RCardinalityField {

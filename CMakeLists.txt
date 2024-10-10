@@ -76,26 +76,6 @@ include(cmake/modules/SetROOTVersion.cmake)
 
 message(STATUS "Building ROOT version ${ROOT_FULL_VERSION}")
 
-#---Try to download a file to check internet connection-----------------------------------------
-message(STATUS "Checking internet connectivity")
-file(DOWNLOAD https://root.cern/files/cmake_connectivity_test.txt ${CMAKE_CURRENT_BINARY_DIR}/cmake_connectivity_test.txt
-  TIMEOUT 10 STATUS DOWNLOAD_STATUS
-)
-# Get the status code from the download status
-list(GET DOWNLOAD_STATUS 0 STATUS_CODE)
-# Check if download was successful.
-if(${STATUS_CODE} EQUAL 0)
-  # Succcess
-  message(STATUS "Checking internet connectivity - found")
-  # Now let's delete the file
-  file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/cmake_connectivity_test.txt)
-  set(NO_CONNECTION FALSE)
-else()
-  # Error
-  message(STATUS "Checking internet connectivity - failed: will not automatically download external dependencies")
-  set(NO_CONNECTION TRUE)
-endif()
-
 #---Where to look first for cmake modules, before ${CMAKE_ROOT}/Modules/ is checked-------------
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
 
@@ -108,16 +88,6 @@ include(RootBuildOptions)
 include(RootMacros)
 include(CheckAssembler)
 include(CheckIntrinsics)
-
-# Building Clad requires an internet connection, if we're not side-loading the source directory
-if(clad AND NOT DEFINED CLAD_SOURCE_DIR AND NO_CONNECTION)
-  if(fail-on-missing)
-    message(FATAL_ERROR "No internet connection. Please check your connection, or either disable the 'clad' option or the 'fail-on-missing' to automatically disable options requiring internet access")
-  else()
-    message(STATUS "No internet connection, disabling the 'clad' option")
-    set(clad OFF CACHE BOOL "Disabled because there is no internet connection" FORCE)
-  endif()
-endif()
 
 # relatedrepo_GetClosestMatch(REPO_NAME <repo> ORIGIN_PREFIX <originp> UPSTREAM_PREFIX <upstreamp>
 #                             FETCHURL_VARIABLE <output_url> FETCHREF_VARIABLE <output_ref>)
@@ -598,15 +568,8 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_INSTALL_PREFIX)
   else()
     install(DIRECTORY README DESTINATION ${CMAKE_INSTALL_DOCDIR})
   endif()
-  set(ETC_PATT_EXCL)
-  if(NOT roofit)
-    list(APPEND ETC_PATT_EXCL PATTERN HistFactorySchema.dtd EXCLUDE)
-    list(APPEND ETC_PATT_EXCL PATTERN RooFitHS3_wsexportkeys.json EXCLUDE)
-    list(APPEND ETC_PATT_EXCL PATTERN RooFitHS3_wsfactoryexpressions.json EXCLUDE)
-  endif()
   install(DIRECTORY etc/ DESTINATION ${CMAKE_INSTALL_SYSCONFDIR} USE_SOURCE_PERMISSIONS
                          ${DIR_PERMISSIONS}
-                         ${ETC_PATT_EXCL}
                          PATTERN "system.rootrc" EXCLUDE
                          PATTERN "system.rootauthrc" EXCLUDE
                          PATTERN "system.rootdaemonrc" EXCLUDE
@@ -625,9 +588,6 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_INSTALL_PREFIX)
   if(NOT fortran OR NOT CMAKE_Fortran_COMPILER)
     list(APPEND MAN_PATT_EXCL PATTERN h2root.1 EXCLUDE)
     list(APPEND MAN_PATT_EXCL PATTERN g2root.1 EXCLUDE)
-  endif()
-  if(NOT roofit)
-    list(APPEND MAN_PATT_EXCL PATTERN prepareHistFactory.1 EXCLUDE)
   endif()
   install(DIRECTORY man/    DESTINATION ${CMAKE_INSTALL_MANDIR} ${DIR_PERMISSIONS} ${MAN_PATT_EXCL})
   install(DIRECTORY tutorials/ DESTINATION ${CMAKE_INSTALL_TUTDIR} ${DIR_PERMISSIONS} COMPONENT tests)
